@@ -176,6 +176,8 @@ endif ()
 
 if (CMAKE_PROJECT_NAME STREQUAL PROFINET AND BUILD_TESTING)
   add_executable(pf_test "")
+  install(TARGETS pf_test
+        RUNTIME DESTINATION bin)
 endif()
 
 # Platform configuration
