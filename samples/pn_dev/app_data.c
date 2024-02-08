@@ -13,20 +13,35 @@
  * full license information.
  ********************************************************************/
 
+/* 
+ *  _  __                    _ _              ___  _        __      __                
+ * | |/ /_ __   _____      _(_) |_           / _ \| | ___  / _|___ / _| ___  _ __ ___ 
+ * | ' /| '_ \ / _ \ \ /\ / / | __|  _____  | | | | |/ _ \| |_/ __| |_ / _ \| '__/ __|
+ * | . \| | | | (_) \ V  V /| | |_  |_____| | |_| | | (_) |  _\__ \  _| (_) | |  \__ \
+ * |_|\_\_| |_|\___/ \_/\_/ |_|\__|          \___/|_|\___/|_| |___/_|  \___/|_|  |___/
+ *
+ */ 
+                                                                                    
+
 #include "app_data.h"
 #include "app_utils.h"
 #include "app_gsdml.h"
 #include "app_log.h"
+#include "interface.h"
 #include "sampleapp_common.h"
 #include "osal.h"
 #include "pnal.h"
 #include <pnet_api.h>
+#include "py_interface.h"
 
+#include <assert.h>
+#include <arpa/inet.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-#define APP_DATA_DEFAULT_OUTPUT_DATA 0
+#define APP_DATA_DEFAULT_OUTPUT_DATA CMD_CREATE(0, 0, 0)
 
 /* Parameter data for digital submodules
  * The stored value is shared between all digital submodules in this example.
@@ -45,9 +60,49 @@ static uint32_t app_param_echo_gain = 1; /* Network endianness */
 
 /* Digital submodule process data
  * The stored value is shared between all digital submodules in this example. */
-static uint8_t inputdata[APP_GSDML_INPUT_DATA_DIGITAL_SIZE] = {0};
-static uint8_t outputdata[APP_GSDML_OUTPUT_DATA_DIGITAL_SIZE] = {0};
-static uint8_t counter = 0;
+
+/**
+ * status_reg_union_t is used to hold status register data. It allows easy
+ * conversion between uint32_t, which is needed for bitwise operations, and a
+ * uint8_t array, which is needed for transmission over the network.
+ *
+ * @note The length of 'array' in status_reg_union_t must be equal to the size
+ * of 'u32' for proper conversion between array and uint32_t. The htonl API is
+ * used on the 'u32' member to ensure correct endianness, which takes a
+ * uint32_t parameter; 'u32' must be of type uint32_t.
+ */
+typedef union {
+  uint32_t u32;
+  uint8_t array[APP_GSDML_INPUT_DATA_DIGITAL_SIZE];
+} status_reg_union_t;
+static_assert(APP_GSDML_INPUT_DATA_DIGITAL_SIZE == sizeof(uint32_t),
+              "The length of 'array' in status_reg_union_t must be equal to "
+              "the size of 'u32'.");
+
+/**
+ * command_reg_union_t is used to hold status register data. It allows easy
+ * conversion between uint32_t, which is needed for bitwise operations, and a
+ * uint8_t array, which is needed for transmission over the network.
+ *
+ * @note The length of 'array' in command_reg_union_t must be equal to the size
+ * of 'u32' for proper conversion between array and uint32_t. The htonl API is
+ * used on the 'u32' member to ensure correct endianness, which takes a
+ * uint32_t parameter; 'u32' must be of type uint32_t.
+ */
+typedef union {
+  uint32_t u32;
+  uint8_t array[APP_GSDML_OUTPUT_DATA_DIGITAL_SIZE];
+} command_reg_union_t;
+static_assert(APP_GSDML_OUTPUT_DATA_DIGITAL_SIZE == sizeof(uint32_t),
+              "The length of 'array' in command_reg_union_t must be equal to "
+              "the size of 'u32'.");
+
+static command_reg_union_t command_reg = {0};
+static status_reg_union_t status_reg = {0};
+static bool is_status_reg_set = false;
+static bool exec_command = false;
+static command_reg_cmd_t command = 0;
+static command_reg_param_t parameter = 0;
 
 /* Network endianness */
 static uint8_t echo_inputdata[APP_GSDML_INPUT_DATA_ECHO_SIZE] = {0};
@@ -92,7 +147,6 @@ uint8_t * app_data_get_input_data (
    uint16_t slot_nbr,
    uint16_t subslot_nbr,
    uint32_t submodule_id,
-   bool button_pressed,
    uint16_t * size,
    uint8_t * iops)
 {
@@ -108,26 +162,26 @@ uint8_t * app_data_get_input_data (
       return NULL;
    }
 
-   if (
-      submodule_id == APP_GSDML_SUBMOD_ID_DIGITAL_IN ||
-      submodule_id == APP_GSDML_SUBMOD_ID_DIGITAL_IN_OUT)
+   if (submodule_id == APP_GSDML_SUBMOD_ID_STATUS)
    {
-      /* Prepare digital input data
-       * Lowest 7 bits: Counter    Most significant bit: Button
-       */
-      inputdata[0] = counter++;
-      if (button_pressed)
-      {
-         inputdata[0] |= 0x80;
-      }
-      else
-      {
-         inputdata[0] &= 0x7F;
-      }
-
       *size = APP_GSDML_INPUT_DATA_DIGITAL_SIZE;
       *iops = PNET_IOXS_GOOD;
-      return inputdata;
+
+      // If app_data_process_output_data wasn't called to set status_reg,
+      // ensure we have a valid value.
+      if (!is_status_reg_set) {
+        status_reg.u32 =
+            STATUS_CREATE(STATUS_FLAG_OPERATIONAL, !STATUS_FLAG_BUSY,
+                          ERROR_UNDEFINED, STATUS_READY);
+      }
+
+      // Ensure correct endianness (host to network). This is the only location
+      // where other translation units can access the status register, so make
+      // a single call to htonl here. htonl does not need to be (and should not
+      // be) used when creating or modifying the status register elsewhere in
+      // this translation unit.
+      status_reg.u32 = htonl(status_reg.u32);
+      return status_reg.array;
    }
 
    if (submodule_id == APP_GSDML_SUBMOD_ID_ECHO)
@@ -160,33 +214,93 @@ uint8_t * app_data_get_input_data (
    return NULL;
 }
 
-int app_data_set_output_data (
+/**
+ * Execute commands received from the PLC.
+ *
+ * Any commands that cannot be processed here are forwarded to the Python image
+ * processing component.
+ *
+ * @param cmd Command received from the PLC
+ * @param param Parameter received from the PLC
+ * @return Status register
+ */
+static status_reg_t app_execute_command(command_reg_cmd_t cmd,
+                                        command_reg_param_t param) {
+  status_reg_t status = STATUS_CREATE(1, 0, ERROR_INTERNAL, STATUS_ERROR);
+  switch (cmd) {
+    case CMD_NOP:
+      status = STATUS_CREATE(1, 0, ERROR_UNDEFINED, STATUS_UNDEFINED);
+      break;
+
+    case CMD_REBOOT:
+      py_deinit();
+      if (py_init()) {
+        status = STATUS_CREATE(1, 0, ERROR_UNDEFINED, STATUS_BOOTING);
+      } else {
+        APP_LOG_FATAL("py_init failed during reboot!\n");
+      }
+      break;
+
+    case CMD_PING:
+      status = STATUS_CREATE(1, 0, ERROR_UNDEFINED, STATUS_PING_REPLY);
+      break;
+
+    default:
+      status = py_process_command(cmd, param);
+      break;
+  }
+  return status;
+}
+
+/**
+ * Process the command register and set the status register
+ *
+ * The command is executed when the execute bit flips from true to false.
+ */
+void process_command_reg(void) {
+  // TODO-bwahl - need a way to determine and report OPERATIONAL bit
+  if (CMD_IS_EXECUTE_BIT_SET(command_reg.u32)) {
+    exec_command = true;
+    command = CMD_EXTRACT_COMMAND(command_reg.u32);
+    parameter = CMD_EXTRACT_PARAMETER(command_reg.u32);
+    status_reg.u32 = STATUS_CREATE(STATUS_FLAG_OPERATIONAL, STATUS_FLAG_BUSY,
+                                   ERROR_UNDEFINED, STATUS_BUSY);
+  } else if (!CMD_IS_EXECUTE_BIT_SET(command_reg.u32) && exec_command) {
+    exec_command = false;
+    status_reg.u32 = app_execute_command(command, parameter);
+  } else {
+    status_reg.u32 = STATUS_CREATE(STATUS_FLAG_OPERATIONAL, !STATUS_FLAG_BUSY,
+                                   ERROR_UNDEFINED, STATUS_READY);
+  }
+  is_status_reg_set = true;
+}
+
+int app_data_process_output_data(
    uint16_t slot_nbr,
    uint16_t subslot_nbr,
    uint32_t submodule_id,
    uint8_t * data,
    uint16_t size)
 {
-   bool led_state;
-
    if (data == NULL)
    {
       return -1;
    }
 
-   if (
-      submodule_id == APP_GSDML_SUBMOD_ID_DIGITAL_OUT ||
-      submodule_id == APP_GSDML_SUBMOD_ID_DIGITAL_IN_OUT)
+   if (submodule_id == APP_GSDML_SUBMOD_ID_COMMAND)
    {
       if (size == APP_GSDML_OUTPUT_DATA_DIGITAL_SIZE)
       {
-         memcpy (outputdata, data, size);
-
-         /* Most significant bit: LED */
-         led_state = (outputdata[0] & 0x80) > 0;
-         app_handle_data_led_state (led_state);
-
-         return 0;
+        // Get data from the PLC and process commands. According to the P-Net
+        // docs, "The Profinet payload is sent as big endian (network endian)
+        // on the wire." Convert from buffer to uint32_t and ensure correct
+        // endianness (network to host). ntohl calls should not be called
+        // elsewhere in this translation unit when creating or modifying the
+        // command register.
+        memcpy(command_reg.array, data, size);
+        command_reg.u32 = ntohl(command_reg.u32);
+        process_command_reg();
+        return 0;
       }
    }
    else if (submodule_id == APP_GSDML_SUBMOD_ID_ECHO)
@@ -204,8 +318,7 @@ int app_data_set_output_data (
 
 int app_data_set_default_outputs (void)
 {
-   outputdata[0] = APP_DATA_DEFAULT_OUTPUT_DATA;
-   app_handle_data_led_state (false);
+   command_reg.u32 = APP_DATA_DEFAULT_OUTPUT_DATA;
    return 0;
 }
 

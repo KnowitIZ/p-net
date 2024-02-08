@@ -13,6 +13,16 @@
  * full license information.
  ********************************************************************/
 
+/* 
+ *  _  __                    _ _              ___  _        __      __                
+ * | |/ /_ __   _____      _(_) |_           / _ \| | ___  / _|___ / _| ___  _ __ ___ 
+ * | ' /| '_ \ / _ \ \ /\ / / | __|  _____  | | | | |/ _ \| |_/ __| |_ / _ \| '__/ __|
+ * | . \| | | | (_) \ V  V /| | |_  |_____| | |_| | | (_) |  _\__ \  _| (_) | |  \__ \
+ * |_|\_\_| |_|\___/ \_/\_/ |_|\__|          \___/|_|\___/|_| |___/_|  \___/|_|  |___/
+ *
+ */ 
+                                                                                    
+
 #ifndef APP_DATA_H
 #define APP_DATA_H
 
@@ -39,15 +49,11 @@ extern "C" {
 /**
  * Get application specific PNIO input data (for sending to PLC)
  *
- * The main sample application keeps track
- * of button so it is a parameter to this function.
- *
  * This function is not called for the DAP submodules (slot_nbr==0).
  *
  * @param slot_nbr      In:  Slot number
  * @param subslot_nbr   In:  Subslot number
  * @param submodule_id  In:  Submodule id
- * @param button_state  In:  State of button 1
  * @param size          Out: Size of pnio data.
  *                           Not modified on error.
  * @param iops          Out: Provider status. If for example
@@ -61,7 +67,6 @@ uint8_t * app_data_get_input_data (
    uint16_t slot_nbr,
    uint16_t subslot_nbr,
    uint32_t submodule_id,
-   bool button_state,
    uint16_t * size,
    uint8_t * iops);
 
@@ -77,7 +82,7 @@ uint8_t * app_data_get_input_data (
  * @param size          In:  Length of output data
  * @return 0 on success, -1 on error
  */
-int app_data_set_output_data (
+int app_data_process_output_data (
    uint16_t slot_nbr,
    uint16_t subslot_nbr,
    uint32_t submodule_id,

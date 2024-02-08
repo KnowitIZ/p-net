@@ -19,9 +19,11 @@
 #include "app_gsdml.h"
 #include "app_data.h"
 #include "app_log.h"
+#include "interface.h"
 #include "osal.h"
 #include "pnal.h"
 #include <pnet_api.h>
+#include "py_interface.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -88,13 +90,6 @@ typedef struct app_data_t
    app_demo_state_t alarm_demo_state;
    uint8_t alarm_payload[APP_GSDML_ALARM_PAYLOAD_SIZE];
 
-   bool button1_pressed;
-   bool button2_pressed;
-   bool button2_pressed_previous;
-
-   /* Counters used to control when buttons are checked
-    * and process data is updated */
-   uint32_t buttons_tick_counter;
    uint32_t process_data_tick_counter;
 
 } app_data_t;
@@ -133,6 +128,11 @@ app_data_t * app_init (const pnet_cfg_t * pnet_cfg, const app_args_t * app_args)
    uint16_t i;
 
    APP_LOG_INFO ("Init P-Net stack and sample application\n");
+
+   if (!py_init()) {
+      APP_LOG_FATAL("Python module failed to init!\n");
+      return NULL;
+   }
 
    app = &app_state;
 
@@ -997,7 +997,7 @@ static void app_cyclic_data_callback (app_subslot_t * subslot, void * tag)
    bool outdata_updated;
    uint16_t outdata_length;
    uint8_t outdata_iops;
-   uint8_t outdata_buf[20]; /* Todo: Remove temporary buffer */
+   uint8_t outdata_buf[APP_GSDML_OUTPUT_DATA_DIGITAL_SIZE];
 
    if (app == NULL)
    {
@@ -1037,7 +1037,7 @@ static void app_cyclic_data_callback (app_subslot_t * subslot, void * tag)
       {
          /* Application specific handling of the output data to a submodule.
             For the sample application, the data sets a LED. */
-         (void)app_data_set_output_data (
+         (void)app_data_process_output_data(
             subslot->slot_nbr,
             subslot->subslot_nbr,
             subslot->submodule_id,
@@ -1060,7 +1060,6 @@ static void app_cyclic_data_callback (app_subslot_t * subslot, void * tag)
          subslot->slot_nbr,
          subslot->subslot_nbr,
          subslot->submodule_id,
-         app->button1_pressed,
          &indata_size,
          &indata_iops);
 
@@ -1135,7 +1134,6 @@ static int app_set_initial_data_and_ioxs (app_data_t * app)
                      p_subslot->slot_nbr,
                      p_subslot->subslot_nbr,
                      p_subslot->submodule_id,
-                     app->button1_pressed,
                      &indata_size,
                      &indata_iops);
                }
@@ -1265,8 +1263,7 @@ static void app_handle_demo_pnet_api (app_data_t * app)
          p_subslot = &app->main_api.slots[slot].subslots[subslot_ix];
          if (
             app_utils_subslot_is_input (p_subslot) &&
-            (p_subslot->submodule_id == APP_GSDML_SUBMOD_ID_DIGITAL_IN ||
-             p_subslot->submodule_id == APP_GSDML_SUBMOD_ID_DIGITAL_IN_OUT))
+             (p_subslot->submodule_id == APP_GSDML_SUBMOD_ID_STATUS))
          {
             found_inputsubslot = true;
             break;
@@ -1544,42 +1541,16 @@ void app_pnet_cfg_init_default (pnet_cfg_t * pnet_cfg)
    pnet_cfg->cb_arg = (void *)&app_state;
 }
 
-/**
- * Read button states from operating system
- *
- * Actual reading is done every APP_TICKS_READ_BUTTONS invocation
- *
- * @param app             InOut:    Application handle
- */
-static void update_button_states (app_data_t * app)
-{
-   app->buttons_tick_counter++;
-   if (app->buttons_tick_counter > APP_TICKS_READ_BUTTONS)
-   {
-      app->button1_pressed = app_get_button (0);
-      app->button2_pressed = app_get_button (1);
-      app->buttons_tick_counter = 0;
-   }
-}
-
 /* Event handlers for the main loop. */
 
 static void app_handle_event_timer (app_data_t * app)
 {
    os_event_clr (app->main_events, APP_EVENT_TIMER);
 
-   update_button_states (app);
    if (app_is_connected_to_controller (app))
    {
       app_handle_cyclic_data (app);
    }
-
-   /* Run alarm demo function if button2 is pressed */
-   if ((app->button2_pressed == true) && (app->button2_pressed_previous == false))
-   {
-      app_handle_demo_pnet_api (app);
-   }
-   app->button2_pressed_previous = app->button2_pressed;
 
    /* Run p-net stack */
    pnet_handle_periodic (app->net);
@@ -1720,7 +1691,8 @@ void app_loop_forever (void * arg)
                    APP_EVENT_ALARM | APP_EVENT_SM_RELEASED | APP_EVENT_ABORT;
    uint32_t flags = 0;
 
-   app_set_led (APP_DATA_LED_ID, false);
+   // TODO-bwahl - should we do anything here? ping script? check if
+   // operational?
    app_plug_dap (app, app->pnet_cfg->num_physical_ports);
    APP_LOG_INFO ("Waiting for PLC connect request\n\n");
 
