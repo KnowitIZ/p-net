@@ -18,6 +18,11 @@ if (PNET_OPTION_SNMP)
   find_package(NetSNMPAgent REQUIRED)
 endif()
 
+set(Python_INCLUDE_DIRS "/usr/include/arm-linux-gnueabihf/python3.11" "/usr/include/python3.11")
+set(Python_LIBRARIES "-lpython3.11")
+target_include_directories(pn_dev PRIVATE ${Python_INCLUDE_DIRS})
+target_link_libraries(pn_dev PRIVATE ${Python_LIBRARIES})
+
 target_include_directories(profinet
   PRIVATE
   src/ports/linux
@@ -77,6 +82,7 @@ target_sources(pn_dev
   samples/pn_dev/app_gsdml.c
   samples/pn_dev/app_data.c
   src/ports/linux/sampleapp_main.c
+  samples/pn_dev/py_interface.c
   )
 
 target_compile_options(pn_dev
