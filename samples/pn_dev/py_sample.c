@@ -1,11 +1,13 @@
 /*
  * For demonstration purposes.
  *
- * To build:
+ * To build and run this file:
  * 1. Ensure cwd is p-net/samples/pn_dev/
- * 2. gcc -I /usr/include/python3.11 -c py_test.c -o py_test.o
+ * 2. gcc -I /usr/include/python3.11 -c py_sample.c -o py_sample.o
  * 3. gcc -I /usr/include/python3.11 -c py_interface.c -o py_interface.o
- * 4. gcc py_test.o py_interface.o -lpython3.11 -o program
+ * 4. gcc -c app_log.c -o app_log.o
+ * 5. gcc py_sample.o py_interface.o app_log.o -lpython3.11 -o program
+ * 6. ./program
  */
 
 #include <stdio.h>
@@ -41,6 +43,7 @@ int main (int argc, char * argv[])
       else if (i % 10 == 0)
       {
          cmd = CMD_REBOOT;
+         printf ("C reboot image processing\n");
          py_deinit();
          if (py_init())
          {
@@ -60,17 +63,17 @@ int main (int argc, char * argv[])
 
       if (cmd != CMD_REBOOT)
       {
-         printf ("\nC call py_execute_command cmd=%u\n", cmd);
+         printf ("C call py_execute_command cmd=%u\n", cmd);
          status_reg = py_execute_command (cmd, 0);
          operational = STATUS_EXTRACT_OPERATIONAL (status_reg);
          busy = STATUS_EXTRACT_BUSY (status_reg);
          error = STATUS_EXTRACT_ERROR (status_reg);
          status = STATUS_EXTRACT_ADDITIONAL_STATUS (status_reg);
-
-         printf ("C error = %u\n", error);
-         printf ("C status = %u\n", status);
-         printf ("\n");
       }
+
+      printf ("C error = %u\n", error);
+      printf ("C status = %u\n", status);
+      printf ("\n");
 
       sleep (1);
       ++i;

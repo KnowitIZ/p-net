@@ -3,10 +3,10 @@
  *********************************************************************/
 #include <Python.h>
 #include <assert.h>
-#include <libgen.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <limits.h>
 #include <unistd.h>
 
 #include "app_log.h"
@@ -66,8 +66,20 @@ static bool is_init = false;
 bool py_init(void) {
   bool success = true;
 
-  // Set PYTHONPATH env variable to this file's directory
-  setenv("PYTHONPATH", dirname(__FILE__), 1);
+  {
+    // Set PYTHONPATH env variable to the current working directory. This is
+    // where Python will search for the image_processing.py module. Searching
+    // in cwd allows the real image_processing.py located in the project root
+    // to be imported and used when building (using build.sh) and running the
+    // project, and also allows the sample image_processing.py module in this
+    // directory to be imported and used when building and running py_sample.c.
+    char cwd[PATH_MAX] = {'\0'};
+    if (getcwd(cwd, sizeof(cwd)) == NULL) {
+      APP_LOG_FATAL("py_init: getcwd() failed");
+      return false;
+    }
+    setenv("PYTHONPATH", cwd, 1);
+  }
 
   Py_Initialize();
 
