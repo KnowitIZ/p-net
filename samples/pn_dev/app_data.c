@@ -75,9 +75,7 @@ typedef union {
   uint32_t u32;
   uint8_t array[APP_GSDML_INPUT_DATA_DIGITAL_SIZE];
 } status_reg_union_t;
-static_assert(APP_GSDML_INPUT_DATA_DIGITAL_SIZE == sizeof(uint32_t),
-              "The length of 'array' in status_reg_union_t must be equal to "
-              "the size of 'u32'.");
+_Static_assert(APP_GSDML_INPUT_DATA_DIGITAL_SIZE == sizeof(uint32_t), "size of 'u32' must match length of 'array'");
 
 /**
  * command_reg_union_t is used to hold status register data. It allows easy
@@ -93,9 +91,7 @@ typedef union {
   uint32_t u32;
   uint8_t array[APP_GSDML_OUTPUT_DATA_DIGITAL_SIZE];
 } command_reg_union_t;
-static_assert(APP_GSDML_OUTPUT_DATA_DIGITAL_SIZE == sizeof(uint32_t),
-              "The length of 'array' in command_reg_union_t must be equal to "
-              "the size of 'u32'.");
+_Static_assert(APP_GSDML_OUTPUT_DATA_DIGITAL_SIZE == sizeof(uint32_t), "size of 'u32' must match length of 'array'");;
 
 static command_reg_union_t command_reg = {0};
 static status_reg_union_t status_reg = {0};

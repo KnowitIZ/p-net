@@ -3,22 +3,25 @@
 /*********************************************************************
  *                             Includes
  *********************************************************************/
-#include "./py_interface.h"
-
 #include <Python.h>
 #include <assert.h>
+#include <libgen.h>
 #include <stdbool.h>
 #include <stdint.h>
-#include <stdio.h>
+#include <stdlib.h>
 #include <unistd.h>
 
+#include "app_log.h"
 #include "interface.h"
+#include "py_interface.h"
 
 /*********************************************************************
  *                        Literal Constants
  *********************************************************************/
 
-#define MODULE_NAME ("sample")  // exclude .py
+// Module name of the Python file (excludes .py). The Python module must be in
+// the same directory as this file.
+#define MODULE_NAME ("image_processing")
 
 // constants for the process_command() Python function
 #define NUM_ARGS (2)
@@ -38,22 +41,14 @@ typedef unsigned long py_return_t;
  *                              Macros
  *********************************************************************/
 
-#define DEBUG (true)
-#if (DEBUG)
-#define DEBUG_PRINTF(...) printf(__VA_ARGS__)
-#else
-#define DEBUG_PRINTF(...)
-#endif
-
 /*********************************************************************
  *                            Variables
  *********************************************************************/
 
 static PyObject* py_module_init;    // init() function in Python module
 static PyObject* py_module_deinit;  // deinit() function in Python module
-static PyObject* py_proc_cmd;  // process_command() function in Python module
-static PyObject*
-    py_proc_cmd_args;  // arg tuple for the Python process_command() function
+static PyObject* py_proc_cmd;       // process_command() function in Python module
+static PyObject* py_proc_cmd_args;  // arg tuple for the Python process_command() function
 
 static bool is_init = false;
 
@@ -73,6 +68,9 @@ static bool is_init = false;
 bool py_init(void) {
   bool success = true;
 
+  // Set PYTHONPATH env variable to this file's directory
+  setenv("PYTHONPATH", dirname(__FILE__), 1);
+
   Py_Initialize();
 
   // import the Python module
@@ -80,13 +78,13 @@ bool py_init(void) {
   PyObject* py_module = PyImport_Import(py_name);
   Py_DECREF(py_name);
   success = py_module && PyModule_Check(py_module);
-  if (!success) DEBUG_PRINTF("py_init: module import failed\n");
+  if (!success) APP_LOG_FATAL("py_init: module import failed\n");
 
   if (success) {
     // get a reference to the Python process_command() function
     py_proc_cmd = PyObject_GetAttrString(py_module, "process_command");
     success = py_proc_cmd && PyCallable_Check(py_proc_cmd);
-    if (!success) DEBUG_PRINTF("py_init: get ref to process_command fail\n");
+    if (!success) APP_LOG_FATAL("py_init: get ref to process_command fail\n");
   }
 
   if (success) {
@@ -94,23 +92,23 @@ bool py_init(void) {
     py_proc_cmd_args = PyTuple_New(NUM_ARGS);
     success = py_proc_cmd_args && PyTuple_Check(py_proc_cmd_args) &&
               (PyTuple_Size(py_proc_cmd_args) == NUM_ARGS);
-    if (!success) DEBUG_PRINTF("py_init: creating arg tuple failed\n");
+    if (!success) APP_LOG_FATAL("py_init: creating arg tuple failed\n");
   }
 
   if (success) {
     // get a reference to the python module deinit function
     py_module_deinit = PyObject_GetAttrString(py_module, "deinit");
     success = success && py_module_deinit && PyCallable_Check(py_module_deinit);
-    if (!success) DEBUG_PRINTF("py_init: get ref to deinit fail\n");
+    if (!success) APP_LOG_FATAL("py_init: get ref to deinit fail\n");
   }
 
   if (success) {
     // call the Python py_module_init function
     py_module_init = PyObject_GetAttrString(py_module, "init");
     success = py_module_init && PyCallable_Check(py_module_init);
-    if (!success) DEBUG_PRINTF("py_init: get ref to py_module_init fail\n");
+    if (!success) APP_LOG_FATAL("py_init: get ref to py_module_init fail\n");
     success = success && (PyObject_CallObject(py_module_init, NULL) != NULL);
-    if (!success) DEBUG_PRINTF("py_init: py_module_init call fail\n");
+    if (!success) APP_LOG_FATAL("py_init: py_module_init call fail\n");
   }
 
   // we don't need the reference to the module anymore
@@ -147,7 +145,7 @@ void py_deinit(void) {
 status_reg_t py_process_command(command_reg_cmd_t cmd,
                                 command_reg_param_t param) {
   if (!is_init) {
-    DEBUG_PRINTF("is_init is false\n");
+    APP_LOG_ERROR("py_process_command: is_init is false\n");
     return STATUS_CREATE(1, 0, ERROR_INTERNAL, STATUS_ERROR);
   }
 
@@ -174,7 +172,7 @@ status_reg_t py_process_command(command_reg_cmd_t cmd,
       }
       Py_XDECREF(py_item);
       if (!success) {
-        DEBUG_PRINTF("tuple element %u is not valid\n", i);
+        APP_LOG_ERROR("py_process_command: tuple element %u is not valid\n", i);
         break;
       }
     }
