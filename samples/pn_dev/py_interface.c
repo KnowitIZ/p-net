@@ -18,7 +18,7 @@
  *********************************************************************/
 
 // Module name of the Python file (excludes .py). The Python module must be in
-// the same directory as this file.
+// the current working directory.
 #define MODULE_NAME ("image_processing")
 
 // constants for the execute_command() Python function
