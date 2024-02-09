@@ -200,8 +200,8 @@ uint8_t * app_data_get_input_data (
  * @param param Parameter received from the PLC
  * @return Status register
  */
-static status_reg_t app_execute_command(command_reg_cmd_t cmd,
-                                        command_reg_param_t param) {
+static status_reg_t execute_command(command_reg_cmd_t cmd,
+                                    command_reg_param_t param) {
   status_reg_t status = STATUS_CREATE(1, 0, ERROR_INTERNAL, STATUS_ERROR);
   switch (cmd) {
     case CMD_NOP:
@@ -222,7 +222,7 @@ static status_reg_t app_execute_command(command_reg_cmd_t cmd,
       break;
 
     default:
-      status = py_process_command(cmd, param);
+      status = py_execute_command(cmd, param);
       break;
   }
   return status;
@@ -233,7 +233,7 @@ static status_reg_t app_execute_command(command_reg_cmd_t cmd,
  *
  * The command is executed when the execute bit flips from true to false.
  */
-void process_command_reg(void) {
+static void process_command_reg(void) {
   // TODO-bwahl - need a way to determine and report OPERATIONAL bit
   if (CMD_IS_EXECUTE_BIT_SET(command_reg.u32)) {
     exec_command = true;
@@ -243,7 +243,7 @@ void process_command_reg(void) {
                                    ERROR_UNDEFINED, STATUS_BUSY);
   } else if (!CMD_IS_EXECUTE_BIT_SET(command_reg.u32) && exec_command) {
     exec_command = false;
-    status_reg.u32 = app_execute_command(command, parameter);
+    status_reg.u32 = execute_command(command, parameter);
   } else {
     status_reg.u32 = STATUS_CREATE(STATUS_FLAG_OPERATIONAL, !STATUS_FLAG_BUSY,
                                    ERROR_UNDEFINED, STATUS_READY);

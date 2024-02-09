@@ -173,7 +173,6 @@ def image_processing_main(
             logging.debug(f"img loop: put successful, status_queue_item={status_queue_item}")
         except queue.Full:
             logging.debug(f"img loop: queue full")
-            pass
 
     # main image processing loop
     while not stop_event.is_set():
@@ -209,8 +208,8 @@ def deinit() -> None:
     process.join()
 
 
-def process_command(cmd: int, param: int) -> tuple[int, int]:
-    """Process a command received from the PLC. Forward the command to the
+def execute_command(cmd: int, param: int) -> tuple[int, int]:
+    """Execute a command received from the PLC. Forward the command to the
     image processing process and block until a response is received. This runs
     in the main app process/thread.
 
@@ -222,7 +221,7 @@ def process_command(cmd: int, param: int) -> tuple[int, int]:
         tuple[int, int]: A two-element tuple of ints containing the error code
         and status code, respectively.
     """
-    logging.debug(f"process_command: cmd={Command(cmd)}, param={param}")
+    logging.debug(f"execute_command: cmd={Command(cmd)}, param={param}")
 
     status_queue_item = StatusQueueItem()
     if cmd in list(Command):
@@ -232,6 +231,6 @@ def process_command(cmd: int, param: int) -> tuple[int, int]:
         status_queue_item.status = Status.ERROR
         status_queue_item.error = Error.INVALID_COMMAND
 
-    logging.debug(f"process_command: returning {status_queue_item}")
+    logging.debug(f"execute_command: returning {status_queue_item}")
 
     return status_queue_item.as_int_tuple()

@@ -1,5 +1,3 @@
-// NOTE - compiled using "gcc -I /usr/include/python3.11 callpy.c -lpython3.11"
-
 /*********************************************************************
  *                             Includes
  *********************************************************************/
@@ -23,7 +21,7 @@
 // the same directory as this file.
 #define MODULE_NAME ("image_processing")
 
-// constants for the process_command() Python function
+// constants for the execute_command() Python function
 #define NUM_ARGS (2)
 #define ARGS_CMD_INDEX (0)
 #define ARGS_PARAM_INDEX (1)
@@ -47,8 +45,8 @@ typedef unsigned long py_return_t;
 
 static PyObject* py_module_init;    // init() function in Python module
 static PyObject* py_module_deinit;  // deinit() function in Python module
-static PyObject* py_proc_cmd;       // process_command() function in Python module
-static PyObject* py_proc_cmd_args;  // arg tuple for the Python process_command() function
+static PyObject* py_exec_cmd;       // execute_command() function in Python module
+static PyObject* py_exec_cmd_args;  // arg tuple for the Python execute_command() function
 
 static bool is_init = false;
 
@@ -81,17 +79,17 @@ bool py_init(void) {
   if (!success) APP_LOG_FATAL("py_init: module import failed\n");
 
   if (success) {
-    // get a reference to the Python process_command() function
-    py_proc_cmd = PyObject_GetAttrString(py_module, "process_command");
-    success = py_proc_cmd && PyCallable_Check(py_proc_cmd);
-    if (!success) APP_LOG_FATAL("py_init: get ref to process_command fail\n");
+    // get a reference to the Python execute_command() function
+    py_exec_cmd = PyObject_GetAttrString(py_module, "execute_command");
+    success = py_exec_cmd && PyCallable_Check(py_exec_cmd);
+    if (!success) APP_LOG_FATAL("py_init: get ref to execute_command fail\n");
   }
 
   if (success) {
-    // create the process_command() argument tuple
-    py_proc_cmd_args = PyTuple_New(NUM_ARGS);
-    success = py_proc_cmd_args && PyTuple_Check(py_proc_cmd_args) &&
-              (PyTuple_Size(py_proc_cmd_args) == NUM_ARGS);
+    // create the execute_command() argument tuple
+    py_exec_cmd_args = PyTuple_New(NUM_ARGS);
+    success = py_exec_cmd_args && PyTuple_Check(py_exec_cmd_args) &&
+              (PyTuple_Size(py_exec_cmd_args) == NUM_ARGS);
     if (!success) APP_LOG_FATAL("py_init: creating arg tuple failed\n");
   }
 
@@ -129,35 +127,35 @@ void py_deinit(void) {
   is_init = false;
   PyObject_CallObject(py_module_deinit, NULL);
   Py_XDECREF(py_module_init);
-  Py_XDECREF(py_proc_cmd);
-  Py_XDECREF(py_proc_cmd_args);
+  Py_XDECREF(py_exec_cmd);
+  Py_XDECREF(py_exec_cmd_args);
   Py_Finalize();
 }
 
 /**
- * Wrapper for the Python process_command() fuction. Calls the function and
+ * Wrapper for the Python execute_command() fuction. Calls the function and
  * gets the return values.
  *
  * @param cmd Command received from the PLC
  * @param param Parameter received from the PLC
  * @return Status register
  */
-status_reg_t py_process_command(command_reg_cmd_t cmd,
+status_reg_t py_execute_command(command_reg_cmd_t cmd,
                                 command_reg_param_t param) {
   if (!is_init) {
-    APP_LOG_ERROR("py_process_command: is_init is false\n");
+    APP_LOG_ERROR("py_execute_command: is_init is false\n");
     return STATUS_CREATE(1, 0, ERROR_INTERNAL, STATUS_ERROR);
   }
 
   // build the arg tuple
   PyObject* py_cmd = PyLong_FromUnsignedLong(cmd);
-  PyTuple_SetItem(py_proc_cmd_args, ARGS_CMD_INDEX, py_cmd);
+  PyTuple_SetItem(py_exec_cmd_args, ARGS_CMD_INDEX, py_cmd);
   py_cmd = PyLong_FromUnsignedLong(param);
-  PyTuple_SetItem(py_proc_cmd_args, ARGS_PARAM_INDEX, py_cmd);
+  PyTuple_SetItem(py_exec_cmd_args, ARGS_PARAM_INDEX, py_cmd);
   Py_DECREF(py_cmd);
 
   // call the function
-  PyObject* py_result = PyObject_CallObject(py_proc_cmd, py_proc_cmd_args);
+  PyObject* py_result = PyObject_CallObject(py_exec_cmd, py_exec_cmd_args);
 
   // extract the return values
   py_return_t ret_vals[NUM_RETURN_VALUES];
@@ -172,7 +170,7 @@ status_reg_t py_process_command(command_reg_cmd_t cmd,
       }
       Py_XDECREF(py_item);
       if (!success) {
-        APP_LOG_ERROR("py_process_command: tuple element %u is not valid\n", i);
+        APP_LOG_ERROR("py_execute_command: tuple element %u is not valid\n", i);
         break;
       }
     }

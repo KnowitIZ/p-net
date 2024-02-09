@@ -14,7 +14,7 @@
 
 bool py_init(void);
 void py_deinit(void);
-status_reg_t py_process_command(command_reg_cmd_t cmd,
-                                 command_reg_param_t param);
+status_reg_t py_execute_command(command_reg_cmd_t cmd,
+                                command_reg_param_t param);
 
 #endif  // PY_INTERFACE_H_

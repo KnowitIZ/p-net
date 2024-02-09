@@ -8,10 +8,11 @@
  * 4. gcc py_test.o py_interface.o -lpython3.11 -o program
  */
 
-#include "py_interface.h"
 #include <stdio.h>
 #include <unistd.h>
 #include <stdlib.h>
+
+#include "py_interface.h"
 
 int main (int argc, char * argv[])
 {
@@ -59,8 +60,8 @@ int main (int argc, char * argv[])
 
       if (cmd != CMD_REBOOT)
       {
-         printf ("\nC call process_command cmd=%u\n", cmd);
-         status_reg = py_process_command (cmd, 0);
+         printf ("\nC call py_execute_command cmd=%u\n", cmd);
+         status_reg = py_execute_command (cmd, 0);
          operational = STATUS_EXTRACT_OPERATIONAL (status_reg);
          busy = STATUS_EXTRACT_BUSY (status_reg);
          error = STATUS_EXTRACT_ERROR (status_reg);
